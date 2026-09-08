@@ -6,6 +6,9 @@ import { getPendingAnalysisForUser } from '@/services/analysis/analysisStore';
 import { getImageStorageProvider } from '@/services/media/imageStorage';
 import type { UploadMealImageResponse } from '@/types/api';
 
+/** See app/api/meals/analyze/route.ts's doc comment on maxDuration — same reasoning (a large photo upload to Cloudinary can be slow). */
+export const maxDuration = 60;
+
 /**
  * POST /api/meals/image
  *

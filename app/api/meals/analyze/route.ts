@@ -10,6 +10,22 @@ import { createPendingAnalysis } from '@/services/analysis/analysisStore';
 import type { AnalyzeMealResponse } from '@/types/api';
 
 /**
+ * Without this, Vercel's platform-default function timeout (10s on Hobby,
+ * 15s on Pro — well under this route's own internal budget) kills the
+ * request while the AI vision call (ANTHROPIC_REQUEST_TIMEOUT_MS, up to
+ * 30s) or the USDA lookup pipeline (several sequential/fallback calls,
+ * USDA_REQUEST_TIMEOUT_MS each, per food item) is still in flight. A
+ * platform-level timeout returns a raw 500 with no JSON body — bypassing
+ * this route's own structured error handling entirely — which is why the
+ * mobile app sometimes shows the generic "Request failed with status 500"
+ * fallback (services/api.ts's authedFetch) instead of one of this route's
+ * own descriptive ApiRouteError messages. 60s covers the worst case
+ * (Anthropic timeout + a few USDA round-trips) with headroom, and is the
+ * max allowed on Vercel's Hobby plan.
+ */
+export const maxDuration = 60;
+
+/**
  * POST /api/meals/analyze
  *
  * 1. authenticate (withAuth)

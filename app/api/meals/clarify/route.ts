@@ -10,6 +10,9 @@ import type { ClarifyMealResponse } from '@/types/api';
 import type { AiMealPrediction, ClarificationAnswer } from '@/types/models';
 import type { FoodItem, MealTotals } from '@/types/nutrition';
 
+/** See app/api/meals/analyze/route.ts's doc comment on maxDuration — same reasoning (USDA lookups). */
+export const maxDuration = 60;
+
 /**
  * POST /api/meals/clarify
  *

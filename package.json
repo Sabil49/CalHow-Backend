@@ -19,6 +19,9 @@
     "react-dom": "19.2.8",
     "zod": "^4.5.4"
   },
+  "overrides": {
+    "jwks-rsa": "3.2.2"
+  },
   "devDependencies": {
     "@types/node": "^20",
     "@types/react": "^19",

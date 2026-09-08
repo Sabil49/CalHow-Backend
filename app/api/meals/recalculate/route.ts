@@ -8,6 +8,9 @@ import { getNutritionLookupProvider } from '@/services/nutrition/nutritionLookup
 import { buildRecalculatedFoodItems, calculateMealTotalsFromMatches } from '@/services/nutrition/calculate';
 import type { RecalculateMealResponse } from '@/types/api';
 
+/** See app/api/meals/analyze/route.ts's doc comment on maxDuration — same reasoning (USDA lookups, one per food item). */
+export const maxDuration = 60;
+
 /**
  * POST /api/meals/recalculate
  *
