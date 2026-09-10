@@ -83,7 +83,9 @@ import { getUserEntitlement, type Entitlement } from './entitlement';
  * exercises this via an in-memory fake store built with the same
  * single-atomic-operation contract.
  */
-export const DAILY_FREE_SCAN_LIMIT = 3;
+// Raised from 3 to 10 for the beta testing period so testers aren't
+// blocked mid-session — bring back down toward 3 before public launch.
+export const DAILY_FREE_SCAN_LIMIT = 10;
 
 /** UTC calendar day key, e.g. "2026-09-05" — see the RESET POLICY section above. */
 export function getUsageDateKeyUTC(now: Date): string {

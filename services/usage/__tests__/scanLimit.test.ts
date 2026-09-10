@@ -45,8 +45,8 @@ function makeDeps(overrides: Partial<ScanQuotaDeps> = {}): ScanQuotaDeps {
 }
 
 describe('DAILY_FREE_SCAN_LIMIT', () => {
-  it('is 3, per the approved V1 product rule', () => {
-    expect(DAILY_FREE_SCAN_LIMIT).toBe(3);
+  it('is 10, the current beta-testing value (raised from the V1 product rule of 3 — revisit before public launch)', () => {
+    expect(DAILY_FREE_SCAN_LIMIT).toBe(10);
   });
 });
 
@@ -63,67 +63,49 @@ describe('getUsageDateKeyUTC', () => {
 });
 
 describe('consumeScanIfAllowed — free-tier daily limit', () => {
-  it('scan 1 → allowed', async () => {
+  // Written against DAILY_FREE_SCAN_LIMIT rather than a hardcoded count so
+  // this doesn't silently go stale (or start asserting the wrong thing)
+  // the next time that constant changes.
+  it('every scan up to the limit is allowed, with correctly decrementing remaining count', async () => {
     const deps = makeDeps();
-    const result = await consumeScanIfAllowed('uid-1', deps);
-    expect(result.allowed).toBe(true);
-    expect(result.scansUsedToday).toBe(1);
-    expect(result.scansRemainingToday).toBe(2);
-    expect(result.dailyScanLimit).toBe(3);
+    for (let i = 1; i <= DAILY_FREE_SCAN_LIMIT; i++) {
+      const result = await consumeScanIfAllowed('uid-1', deps);
+      expect(result.allowed).toBe(true);
+      expect(result.scansUsedToday).toBe(i);
+      expect(result.scansRemainingToday).toBe(DAILY_FREE_SCAN_LIMIT - i);
+      expect(result.dailyScanLimit).toBe(DAILY_FREE_SCAN_LIMIT);
+    }
   });
 
-  it('scan 2 → allowed', async () => {
+  it('the scan right after the limit is rejected, with a scan_limit-appropriate reason and zero remaining', async () => {
     const deps = makeDeps();
-    await consumeScanIfAllowed('uid-1', deps);
-    const result = await consumeScanIfAllowed('uid-1', deps);
-    expect(result.allowed).toBe(true);
-    expect(result.scansUsedToday).toBe(2);
-    expect(result.scansRemainingToday).toBe(1);
-  });
-
-  it('scan 3 → allowed', async () => {
-    const deps = makeDeps();
-    await consumeScanIfAllowed('uid-1', deps);
-    await consumeScanIfAllowed('uid-1', deps);
-    const result = await consumeScanIfAllowed('uid-1', deps);
-    expect(result.allowed).toBe(true);
-    expect(result.scansUsedToday).toBe(3);
-    expect(result.scansRemainingToday).toBe(0);
-  });
-
-  it('scan 4 → rejected, with a scan_limit-appropriate reason and zero remaining', async () => {
-    const deps = makeDeps();
-    await consumeScanIfAllowed('uid-1', deps);
-    await consumeScanIfAllowed('uid-1', deps);
-    await consumeScanIfAllowed('uid-1', deps);
+    for (let i = 0; i < DAILY_FREE_SCAN_LIMIT; i++) await consumeScanIfAllowed('uid-1', deps);
     const result = await consumeScanIfAllowed('uid-1', deps);
 
     expect(result.allowed).toBe(false);
-    expect(result.scansUsedToday).toBe(3);
+    expect(result.scansUsedToday).toBe(DAILY_FREE_SCAN_LIMIT);
     expect(result.scansRemainingToday).toBe(0);
-    expect(result.dailyScanLimit).toBe(3);
+    expect(result.dailyScanLimit).toBe(DAILY_FREE_SCAN_LIMIT);
     expect(result.reason).toBeTruthy();
   });
 
-  it('a 5th, 6th, ... attempt keeps being rejected without ever incrementing past the limit', async () => {
+  it('further attempts keep being rejected without ever incrementing past the limit', async () => {
     const deps = makeDeps();
-    for (let i = 0; i < 3; i++) await consumeScanIfAllowed('uid-1', deps);
+    for (let i = 0; i < DAILY_FREE_SCAN_LIMIT; i++) await consumeScanIfAllowed('uid-1', deps);
     for (let i = 0; i < 5; i++) {
       const result = await consumeScanIfAllowed('uid-1', deps);
       expect(result.allowed).toBe(false);
-      expect(result.scansUsedToday).toBe(3);
+      expect(result.scansUsedToday).toBe(DAILY_FREE_SCAN_LIMIT);
     }
   });
 
   it('tracks separate users independently', async () => {
     const deps = makeDeps();
-    await consumeScanIfAllowed('uid-alice', deps);
-    await consumeScanIfAllowed('uid-alice', deps);
-    await consumeScanIfAllowed('uid-alice', deps);
-    const aliceFourth = await consumeScanIfAllowed('uid-alice', deps);
+    for (let i = 0; i < DAILY_FREE_SCAN_LIMIT; i++) await consumeScanIfAllowed('uid-alice', deps);
+    const aliceOverLimit = await consumeScanIfAllowed('uid-alice', deps);
     const bobFirst = await consumeScanIfAllowed('uid-bob', deps);
 
-    expect(aliceFourth.allowed).toBe(false);
+    expect(aliceOverLimit.allowed).toBe(false);
     expect(bobFirst.allowed).toBe(true);
     expect(bobFirst.scansUsedToday).toBe(1);
   });
@@ -136,9 +118,7 @@ describe('consumeScanIfAllowed — next UTC day resets the quota', () => {
     const day2 = () => new Date('2026-09-06T01:00:00.000Z');
 
     const day1Deps = makeDeps({ store, now: day1 });
-    await consumeScanIfAllowed('uid-1', day1Deps);
-    await consumeScanIfAllowed('uid-1', day1Deps);
-    await consumeScanIfAllowed('uid-1', day1Deps);
+    for (let i = 0; i < DAILY_FREE_SCAN_LIMIT; i++) await consumeScanIfAllowed('uid-1', day1Deps);
     const exhausted = await consumeScanIfAllowed('uid-1', day1Deps);
     expect(exhausted.allowed).toBe(false);
 
@@ -146,19 +126,24 @@ describe('consumeScanIfAllowed — next UTC day resets the quota', () => {
     const freshResult = await consumeScanIfAllowed('uid-1', day2Deps);
     expect(freshResult.allowed).toBe(true);
     expect(freshResult.scansUsedToday).toBe(1);
-    expect(freshResult.scansRemainingToday).toBe(2);
+    expect(freshResult.scansRemainingToday).toBe(DAILY_FREE_SCAN_LIMIT - 1);
   });
 });
 
 describe('consumeScanIfAllowed — concurrency safety', () => {
-  it('10 concurrent requests for a fresh free user consume exactly 3 scans, never more', async () => {
+  it('concurrent requests beyond the limit for a fresh free user consume exactly the limit, never more', async () => {
     const deps = makeDeps();
-    const results = await Promise.all(Array.from({ length: 10 }, () => consumeScanIfAllowed('uid-1', deps)));
+    // Deliberately more requests than the limit (not a fixed 10 — that
+    // would stop exercising the denial path at all once the limit itself
+    // reaches 10, as it did for the beta bump) so this always covers both
+    // the allowed and denied outcomes regardless of the limit's value.
+    const requestCount = DAILY_FREE_SCAN_LIMIT + 5;
+    const results = await Promise.all(Array.from({ length: requestCount }, () => consumeScanIfAllowed('uid-1', deps)));
 
     const allowedCount = results.filter((r) => r.allowed).length;
     const deniedCount = results.filter((r) => !r.allowed).length;
     expect(allowedCount).toBe(DAILY_FREE_SCAN_LIMIT);
-    expect(deniedCount).toBe(10 - DAILY_FREE_SCAN_LIMIT);
+    expect(deniedCount).toBe(requestCount - DAILY_FREE_SCAN_LIMIT);
 
     // No result ever reports a used-count beyond the limit.
     for (const r of results) {
@@ -168,13 +153,12 @@ describe('consumeScanIfAllowed — concurrency safety', () => {
 
   it('a user with exactly one scan remaining cannot be pushed over the limit by two simultaneous requests', async () => {
     const deps = makeDeps();
-    await consumeScanIfAllowed('uid-1', deps); // 1 used
-    await consumeScanIfAllowed('uid-1', deps); // 2 used, 1 remaining
+    for (let i = 0; i < DAILY_FREE_SCAN_LIMIT - 1; i++) await consumeScanIfAllowed('uid-1', deps); // 1 remaining
 
     const [a, b] = await Promise.all([consumeScanIfAllowed('uid-1', deps), consumeScanIfAllowed('uid-1', deps)]);
     const allowedResults = [a, b].filter((r) => r.allowed);
     expect(allowedResults).toHaveLength(1);
-    expect(allowedResults[0]!.scansUsedToday).toBe(3);
+    expect(allowedResults[0]!.scansUsedToday).toBe(DAILY_FREE_SCAN_LIMIT);
   });
 });
 
@@ -196,7 +180,7 @@ describe('consumeScanIfAllowed — entitlement boundary', () => {
 
   it('a "pro" entitlement is unlimited even after what would exhaust a free user', async () => {
     const deps = makeDeps({ getEntitlement: async () => 'pro' as Entitlement });
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < DAILY_FREE_SCAN_LIMIT + 5; i++) {
       const result = await consumeScanIfAllowed('uid-1', deps);
       expect(result.allowed).toBe(true);
     }
