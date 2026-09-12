@@ -1,7 +1,7 @@
 import type { NextRequest } from 'next/server';
 import { withAuth } from '@/lib/auth';
 import { ApiRouteError, jsonSuccess } from '@/lib/apiResponse';
-import { analyzeMealRequestSchema, assertImageWithinSizeLimit, parseJsonBody } from '@/lib/validation';
+import { analyzeMealRequestSchema, assertImageWithinSizeLimit, detectImageMimeType, parseJsonBody } from '@/lib/validation';
 import { consumeScanIfAllowed } from '@/services/usage/scanLimit';
 import { getVisionProvider } from '@/services/ai/visionProvider';
 import { getNutritionLookupProvider } from '@/services/nutrition/nutritionLookup';
@@ -62,8 +62,14 @@ export const POST = withAuth(async (req: NextRequest, { uid }) => {
     throw new ApiRouteError('scan_limit_reached', quota.reason ?? 'You have reached your daily scan limit.');
   }
 
+  // Trust the actual image bytes over the client's claimed mimeType — see
+  // detectImageMimeType's doc comment. Anthropic rejects the request
+  // outright on a mismatch, so this must be corrected before the vision
+  // call, not after.
+  const mimeType = detectImageMimeType(body.imageBase64) ?? body.mimeType;
+
   const { aiResult, foodMatches, prediction, clarificationQuestions } = await runAnalyzePipeline(
-    { imageBase64: body.imageBase64, mimeType: body.mimeType },
+    { imageBase64: body.imageBase64, mimeType },
     { visionProvider: getVisionProvider(), lookupProvider: getNutritionLookupProvider() },
   );
 

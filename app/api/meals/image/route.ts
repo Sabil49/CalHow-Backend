@@ -1,7 +1,7 @@
 import type { NextRequest } from 'next/server';
 import { withAuth } from '@/lib/auth';
 import { jsonSuccess } from '@/lib/apiResponse';
-import { parseJsonBody, uploadMealImageRequestSchema, assertImageWithinSizeLimit } from '@/lib/validation';
+import { parseJsonBody, uploadMealImageRequestSchema, assertImageWithinSizeLimit, detectImageMimeType } from '@/lib/validation';
 import { getPendingAnalysisForUser } from '@/services/analysis/analysisStore';
 import { getImageStorageProvider } from '@/services/media/imageStorage';
 import type { UploadMealImageResponse } from '@/types/api';
@@ -37,9 +37,14 @@ export const POST = withAuth(async (req: NextRequest, { uid }) => {
   assertImageWithinSizeLimit(body.imageBase64);
   await getPendingAnalysisForUser(body.analysisId, uid);
 
+  // Trust the actual image bytes over the client's claimed mimeType — see
+  // lib/validation.ts's detectImageMimeType doc comment. Storing under
+  // the wrong declared type would mislabel the Cloudinary data URI.
+  const mimeType = detectImageMimeType(body.imageBase64) ?? body.mimeType;
+
   const { url } = await getImageStorageProvider().upload({
     imageBase64: body.imageBase64,
-    mimeType: body.mimeType,
+    mimeType,
     uid,
     imageId: body.analysisId,
   });

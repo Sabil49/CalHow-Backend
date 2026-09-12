@@ -1,4 +1,4 @@
-import { fetchRevenueCatSubscriber, type RevenueCatSubscriber } from './revenueCatClient';
+import { fetchRevenueCatActiveEntitlements, type RevenueCatCustomer } from './revenueCatClient';
 
 /**
  * Entitlement boundary — the ONLY place in this backend that decides
@@ -12,38 +12,37 @@ import { fetchRevenueCatSubscriber, type RevenueCatSubscriber } from './revenueC
  * server API below.
  *
  * ---------------------------------------------------------------------
- * VERIFICATION: RevenueCat REST API, keyed by Firebase uid
+ * VERIFICATION: RevenueCat REST API v2, keyed by Firebase uid
  * ---------------------------------------------------------------------
  * The mobile app logs the RevenueCat SDK in with the user's Firebase uid
  * as the RevenueCat App User ID (`Purchases.logIn(uid)` — see
  * calhow-mobile/services/purchases.ts), specifically so this function can
  * look a user up in RevenueCat using the SAME identifier this backend
  * already treats as canonical identity everywhere else, with no separate
- * id-mapping table to keep in sync. `fetchRevenueCatSubscriber(uid)` (see
- * ./revenueCatClient.ts) calls RevenueCat's `GET /v1/subscribers/{uid}`
+ * id-mapping table to keep in sync. `fetchRevenueCatActiveEntitlements(uid)`
+ * (see ./revenueCatClient.ts) calls RevenueCat's
+ * `GET /v2/projects/{project_id}/customers/{uid}/active_entitlements`
  * using a server-only secret key (REVENUECAT_SECRET_API_KEY —
  * lib/env.ts) — this is a genuine second, independent check: even a
  * client that fakes every field it sends this backend cannot make
  * RevenueCat's own servers report an entitlement it doesn't actually have
  * from Apple/Google.
  *
- * An entitlement counts as active exactly when RevenueCat's own SDK-side
- * `EntitlementInfo.isActive` would: `expires_date` is null (non-expiring
- * — e.g. a lifetime/promotional grant) OR in the future, OR the
- * subscription is within Apple/Google's billing-retry grace period
- * (`grace_period_expires_date` in the future) after a failed renewal
- * payment. A CANCELLED subscription (auto-renew turned off) still reports
- * its current `expires_date` unchanged until the paid period actually
- * ends — so a cancelled-but-not-yet-expired subscriber is correctly
- * 'pro' here, and becomes 'free' the moment that date passes, with no
- * special-casing needed for "cancelled" as its own state.
+ * RevenueCat has already resolved whether each entitlement is active
+ * (expiry, non-expiring/lifetime grants, and Apple/Google billing-retry
+ * grace periods) before it ever appears in this list — this function
+ * doesn't do its own date math, it just checks membership. A CANCELLED
+ * subscription (auto-renew turned off) still counts as active until the
+ * paid period actually ends, since RevenueCat itself keeps reporting it
+ * as active until then — no special-casing needed for "cancelled" as its
+ * own state.
  *
  * ---------------------------------------------------------------------
  * FAILURE POLICY: fail CLOSED (treat as 'free') on any RevenueCat error
  * ---------------------------------------------------------------------
  * A network failure, RevenueCat outage, timeout, or malformed response
- * from `fetchRevenueCatSubscriber` results in 'free', not 'pro' and not a
- * thrown error. This is a deliberate security trade-off, not an
+ * from `fetchRevenueCatActiveEntitlements` results in 'free', not 'pro'
+ * and not a thrown error. This is a deliberate security trade-off, not an
  * oversight: failing OPEN (treating a lookup failure as 'pro') would mean
  * a RevenueCat outage silently grants unlimited free AI usage to EVERY
  * user, including non-paying ones — directly costing real Anthropic/USDA
@@ -52,9 +51,9 @@ import { fetchRevenueCatSubscriber, type RevenueCatSubscriber } from './revenueC
  * a real Pro subscriber being incorrectly rate-limited to the free daily
  * quota until RevenueCat recovers — a fairness cost to paying users, but
  * not a security or cost-control failure. There is no cached/last-known-
- * good entitlement snapshot in V1 to fall back on instead (a reasonable
- * V2 improvement — e.g. a short-TTL cache of the last successful lookup —
- * is not implemented here to keep this the smallest secure V1).
+ * good entitlement snapshot to fall back on instead (a reasonable future
+ * improvement — e.g. a short-TTL cache of the last successful lookup —
+ * is not implemented here to keep this the smallest secure version).
  *
  * ---------------------------------------------------------------------
  * users/{uid}.subscription IN FIRESTORE — still not trusted here
@@ -74,34 +73,17 @@ export type Entitlement = 'free' | 'pro';
 export const CALHOW_PRO_ENTITLEMENT_ID = 'calhow_pro';
 
 export interface EntitlementDeps {
-  fetchSubscriber: (uid: string) => Promise<RevenueCatSubscriber | null>;
-  now: () => Date;
+  fetchActiveEntitlements: (uid: string) => Promise<RevenueCatCustomer | null>;
 }
 
 const defaultDeps: EntitlementDeps = {
-  fetchSubscriber: fetchRevenueCatSubscriber,
-  now: () => new Date(),
+  fetchActiveEntitlements: fetchRevenueCatActiveEntitlements,
 };
 
-/** True when `entitlement` grants access right now — active period, non-expiring, or within a billing-retry grace period. */
-function isEntitlementActive(entitlement: RevenueCatSubscriber['entitlements'][string], now: Date): boolean {
-  if (entitlement.expires_date === null) return true;
-
-  const expiresAt = new Date(entitlement.expires_date).getTime();
-  if (expiresAt > now.getTime()) return true;
-
-  if (entitlement.grace_period_expires_date) {
-    const graceUntil = new Date(entitlement.grace_period_expires_date).getTime();
-    if (graceUntil > now.getTime()) return true;
-  }
-
-  return false;
-}
-
 export async function getUserEntitlement(uid: string, deps: EntitlementDeps = defaultDeps): Promise<Entitlement> {
-  let subscriber: RevenueCatSubscriber | null;
+  let customer: RevenueCatCustomer | null;
   try {
-    subscriber = await deps.fetchSubscriber(uid);
+    customer = await deps.fetchActiveEntitlements(uid);
   } catch (err) {
     // See the FAILURE POLICY doc comment above — fail closed to 'free'.
     // eslint-disable-next-line no-console
@@ -109,10 +91,7 @@ export async function getUserEntitlement(uid: string, deps: EntitlementDeps = de
     return 'free';
   }
 
-  if (!subscriber) return 'free'; // no RevenueCat customer record for this uid yet
+  if (!customer) return 'free'; // no RevenueCat customer record for this uid yet
 
-  const entitlement = subscriber.entitlements[CALHOW_PRO_ENTITLEMENT_ID];
-  if (!entitlement) return 'free';
-
-  return isEntitlementActive(entitlement, deps.now()) ? 'pro' : 'free';
+  return customer.activeEntitlementIds.includes(CALHOW_PRO_ENTITLEMENT_ID) ? 'pro' : 'free';
 }

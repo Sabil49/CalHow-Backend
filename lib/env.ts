@@ -143,25 +143,36 @@ export function getCloudinaryEnv() {
  * RevenueCat — server-side entitlement verification (see
  * services/usage/entitlement.ts / services/usage/revenueCatClient.ts).
  *
- * `REVENUECAT_SECRET_API_KEY` is the RevenueCat **secret** API key (starts
- * with `sk_`), used only for server-to-server calls to RevenueCat's REST
- * API (`GET /v1/subscribers/{app_user_id}`) to independently verify
- * whether a user actually has an active `calhow_pro` entitlement. This is
- * NOT the same key as the mobile app's RevenueCat *public* SDK key
- * (`EXPO_PUBLIC_REVENUECAT_IOS_API_KEY` / `_ANDROID_API_KEY`, starting
- * with `appl_`/`goog_`, safe to ship in the client bundle) — the secret
- * key must never reach the Expo app, same server-only rule as every other
+ * `REVENUECAT_SECRET_API_KEY` is the RevenueCat **secret** API key, used
+ * only for server-to-server calls to RevenueCat's REST API **v2**
+ * (`GET /v2/projects/{project_id}/customers/{customer_id}/active_entitlements`)
+ * to independently verify whether a user actually has an active
+ * `calhow_pro` entitlement. This is NOT the same key as the mobile app's
+ * RevenueCat *public* SDK key (`EXPO_PUBLIC_REVENUECAT_IOS_API_KEY` /
+ * `_ANDROID_API_KEY`, safe to ship in the client bundle) — the secret key
+ * must never reach the Expo app, same server-only rule as every other
  * credential in this file.
+ *
+ * `REVENUECAT_PROJECT_ID` is required by every v2 endpoint as a URL path
+ * segment. Find both values in the RevenueCat dashboard -> Project
+ * Settings -> API Keys: the project ID is shown at the top of that page
+ * (also visible in the dashboard URL, /projects/{project_id}/...), and
+ * the secret key is generated further down. RevenueCat v1 secret keys do
+ * NOT work against v2 endpoints (and vice versa) — this app was
+ * previously calling v1 with a v2-only key, which fails with a 403
+ * ("secret API key incompatible with RevenueCat API V1"); if you rotate
+ * this key, generate a v2 secret key, not a legacy v1 one.
  */
 const revenueCatEnvSchema = z.object({
   REVENUECAT_SECRET_API_KEY: z.string().min(1, 'REVENUECAT_SECRET_API_KEY is required'),
+  REVENUECAT_PROJECT_ID: z.string().min(1, 'REVENUECAT_PROJECT_ID is required'),
 });
 
 export function getRevenueCatEnv() {
   const result = revenueCatEnvSchema.safeParse(process.env);
   if (!result.success) {
     throw new Error(
-      `Missing/invalid RevenueCat environment variables: ${result.error.issues.map((i) => i.message).join('; ')}. Get the secret API key from the RevenueCat dashboard -> Project Settings -> API Keys (the "secret" key, not a public SDK key) and set REVENUECAT_SECRET_API_KEY.`,
+      `Missing/invalid RevenueCat environment variables: ${result.error.issues.map((i) => i.message).join('; ')}. Get the project ID and a v2 secret API key from the RevenueCat dashboard -> Project Settings -> API Keys, and set REVENUECAT_PROJECT_ID / REVENUECAT_SECRET_API_KEY.`,
     );
   }
   return result.data;

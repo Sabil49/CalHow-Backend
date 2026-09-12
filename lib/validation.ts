@@ -78,6 +78,39 @@ export async function parseJsonBody<S extends ZodType>(req: NextRequest, schema:
 }
 
 /**
+ * Detects an image's real format directly from its magic bytes, ignoring
+ * whatever `mimeType` the client claims. This exists because client-
+ * reported mimeType (from expo-image-picker et al.) doesn't always match
+ * the actual re-encoded output bytes — e.g. a picker library can report
+ * a photo's ORIGINAL format while quietly re-encoding it to a different
+ * one during compression. That mismatch made Anthropic's vision API
+ * reject the request outright: "the image was specified using the
+ * image/png media type, but the image appears to be a image/jpeg
+ * image." Bytes are authoritative; client-supplied metadata is not — so
+ * every caller of this should prefer this detected type over
+ * `body.mimeType` wherever the actual image bytes matter (the AI vision
+ * call, Cloudinary upload), falling back to the client's claim only when
+ * sniffing is inconclusive.
+ */
+export function detectImageMimeType(imageBase64: string): 'image/jpeg' | 'image/png' | null {
+  let header: Buffer;
+  try {
+    // 16 base64 chars decode to 12 bytes — enough for both signatures below.
+    header = Buffer.from(imageBase64.slice(0, 16), 'base64');
+  } catch {
+    return null;
+  }
+
+  if (header.length >= 8 && header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4e && header[3] === 0x47) {
+    return 'image/png';
+  }
+  if (header.length >= 3 && header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  return null;
+}
+
+/**
  * Rough decoded-byte-size check for a base64 image payload, checked
  * against MAX_IMAGE_BYTES (see lib/env.ts). Base64 encodes 3 bytes as 4
  * characters, so decoded size is ~ (length * 3/4), adjusted for padding.
