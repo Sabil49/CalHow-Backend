@@ -5,7 +5,6 @@ config({ path: path.join(__dirname, '..', '.env.local') });
 
 import { getAdminAuth, getAdminFirestore } from '../lib/firebaseAdmin';
 import { Timestamp } from 'firebase-admin/firestore';
-import type { Meal, UserProfile, WeightLog } from '../../calhow-mobile/types/models';
 
 /**
  * One-off script to create (or reset) an App Store review demo account
@@ -14,7 +13,21 @@ import type { Meal, UserProfile, WeightLog } from '../../calhow-mobile/types/mod
  *
  * Run with: npx tsx scripts/seedDemoAccount.ts
  * Requires calhow-backend/.env.local to have the Firebase Admin credentials.
+ *
+ * Deliberately self-contained (no import from calhow-mobile/types) — this
+ * file is typechecked as part of this repo's own `next build`, which runs
+ * in environments where the sibling calhow-mobile repo isn't checked out.
  */
+
+type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
+
+interface FoodItem {
+  id: string;
+  name: string;
+  portionLabel: string;
+  calories: number;
+  confidence?: number;
+}
 
 const DEMO_EMAIL = 'md.sabeel10+applereview@gmail.com';
 const DEMO_PASSWORD = 'CalHowDemo!25';
@@ -48,11 +61,7 @@ function daysAgo(n: number, hour = 8, minute = 0): Date {
 
 async function seedProfile(uid: string) {
   const db = getAdminFirestore();
-  const profile: Omit<UserProfile, 'uid' | 'memberSince' | 'createdAt' | 'updatedAt'> & {
-    memberSince: Timestamp;
-    createdAt: Timestamp;
-    updatedAt: Timestamp;
-  } = {
+  const profile = {
     email: DEMO_EMAIL,
     fullName: DEMO_NAME,
     photoUrl: null,
@@ -87,13 +96,13 @@ async function seedProfile(uid: string) {
 
 function makeMeal(
   userId: string,
-  mealType: Meal['mealType'],
+  mealType: MealType,
   loggedAt: Date,
   foods: { name: string; portionLabel: string; calories: number }[],
   macros: { protein: number; carbs: number; fats: number; fiber?: number },
-): Omit<Meal, 'id' | 'createdAt' | 'updatedAt'> {
+) {
   const totalCalories = foods.reduce((sum, f) => sum + f.calories, 0);
-  const foodItems = foods.map((f, i) => ({
+  const foodItems: FoodItem[] = foods.map((f, i) => ({
     id: `seed-${loggedAt.getTime()}-${i}`,
     name: f.name,
     portionLabel: f.portionLabel,
@@ -127,7 +136,7 @@ function makeMeal(
 
 async function seedMeals(uid: string) {
   const db = getAdminFirestore();
-  const meals: Omit<Meal, 'id' | 'createdAt' | 'updatedAt'>[] = [
+  const meals = [
     makeMeal(uid, 'breakfast', daysAgo(0, 8, 15), [
       { name: 'Scrambled eggs', portionLabel: '2 eggs', calories: 180 },
       { name: 'Whole wheat toast', portionLabel: '2 slices', calories: 140 },
@@ -191,12 +200,12 @@ async function seedWeightLogs(uid: string) {
   for (const entry of entries) {
     const loggedAt = daysAgo(entry.daysBack, 7, 30);
     const ref = db.collection('users').doc(uid).collection('weightLogs').doc();
-    const log: Omit<WeightLog, 'id' | 'createdAt'> = {
+    batch.set(ref, {
       userId: uid,
       weightKg: entry.weightKg,
-      loggedAt,
-    };
-    batch.set(ref, { ...log, loggedAt: Timestamp.fromDate(loggedAt), createdAt: Timestamp.fromDate(loggedAt) });
+      loggedAt: Timestamp.fromDate(loggedAt),
+      createdAt: Timestamp.fromDate(loggedAt),
+    });
   }
   await batch.commit();
   console.log(`${entries.length} weight logs seeded.`);
