@@ -1,9 +1,12 @@
-<!-- BEGIN:nextjs-agent-rules -->
+# Firebase Cloud Functions, not Next.js
 
-# This is NOT the Next.js you know
+This repo used to be a Next.js app deployed on Vercel. It's now a Firebase Cloud Functions (v2,
+TypeScript) backend for the same product — see `functions/src/index.ts` for the four HTTPS entry
+points. Business logic under `functions/src/services/` is framework-agnostic and was ported over
+unchanged; only `functions/src/lib/auth.ts`, `apiResponse.ts`, and `validation.ts` are
+Express/Cloud-Functions specific.
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
-
-This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
-
-<!-- END:nextjs-agent-rules -->
+Local dev: `cd functions && npm install && npm run build`, then `firebase emulators:start`.
+Deploy: `firebase deploy --only functions` from the repo root (needs `firebase.json`/`.firebaserc`
+there). Secrets (`ANTHROPIC_API_KEY`, `USDA_FDC_API_KEY`, `REVENUECAT_SECRET_API_KEY`) live in
+Firebase Secret Manager, not env files — see `functions/.env.example` for the full rundown.
