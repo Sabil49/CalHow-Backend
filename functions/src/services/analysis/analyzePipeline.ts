@@ -54,12 +54,13 @@ export async function runAnalyzePipeline(input: VisionAnalysisInput, deps: Analy
   // a specific food if its portion grams are invalid/undeterminable —
   // failure policy: invalid portion grams fail the request, not a
   // guessed default (see services/foodMatching/normalizer.ts).
-  const memoryAdjusted: boolean[] = [];
+  // The AI's own portion for each memory-adjusted food (undefined when not adjusted).
+  const originalGrams: (number | undefined)[] = [];
   const foodMatches = await Promise.all(
     aiResult.detectedFoods.map((detected, index) => {
       const normalized = normalizer.normalize(detected);
       const ratio = deps.portionMemory?.get(memoryKey(normalized.normalizedName));
-      memoryAdjusted[index] = ratio != null;
+      originalGrams[index] = ratio != null ? normalized.portionGrams : undefined;
       const portionGrams = ratio != null ? Math.round(normalized.portionGrams * ratio) : normalized.portionGrams;
       return matcher.match(detected.rawName, { ...normalized, portionGrams });
     }),
@@ -88,13 +89,14 @@ export async function runAnalyzePipeline(input: VisionAnalysisInput, deps: Analy
     // Prefer the AI's own human-friendly label when it gave one;
     // otherwise fall back to a plain gram figure. A memory-adjusted
     // portion no longer matches the AI's label, so it's shown in grams.
-    portionLabel: memoryAdjusted[index]
-      ? `${match.portionGrams} g`
-      : (aiResult.detectedFoods[index]?.estimatedPortionLabel ?? `${match.portionGrams} g`),
+    portionLabel:
+      originalGrams[index] != null
+        ? `${match.portionGrams} g`
+        : (aiResult.detectedFoods[index]?.estimatedPortionLabel ?? `${match.portionGrams} g`),
     portionGrams: match.portionGrams,
     calories: calculateFoodItemTotals(match.portionGrams, match.nutrition!).calories,
     confidence: match.matchConfidence,
-    ...(memoryAdjusted[index] ? { memoryAdjusted: true } : {}),
+    ...(originalGrams[index] != null ? { memoryAdjusted: true, aiPortionGrams: originalGrams[index] } : {}),
   }));
 
   const clarificationQuestions = evaluateClarificationPolicy(aiResult, foodMatches);

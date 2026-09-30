@@ -22,6 +22,8 @@ export interface FoodItem {
   imageUrl?: string;
   /** True when Smart Meal Memory (CalHow Pro) scaled the AI's portion from this user's past corrections — see services/analysis/portionMemory.ts. */
   memoryAdjusted?: boolean;
+  /** With memoryAdjusted: the AI's own estimate before memory scaled it — what future learning compares against. */
+  aiPortionGrams?: number;
 }
 
 export interface ClarificationQuestionOption {

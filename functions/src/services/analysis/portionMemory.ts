@@ -55,10 +55,15 @@ export function buildPortionMemory(meals: MemorySourceMeal[]): PortionMemory {
       // Only the same food, kept by the user (a rename means the AI got the
       // food itself wrong — not a portion signal).
       if (!final || memoryKey(final.name) !== memoryKey(aiFood.name)) continue;
-      if (!aiFood.portionGrams || !final.portionGrams || aiFood.portionGrams <= 0 || final.portionGrams <= 0) continue;
+      // Compare against the AI's OWN estimate. If memory already adjusted
+      // this food, portionGrams is the adjusted value; learning from that
+      // would treat an accepted adjustment as "the AI was right" and
+      // gradually cancel the memory out.
+      const aiGrams = aiFood.aiPortionGrams ?? aiFood.portionGrams;
+      if (!aiGrams || !final.portionGrams || aiGrams <= 0 || final.portionGrams <= 0) continue;
       const key = memoryKey(aiFood.name);
       const ratios = ratiosByFood.get(key) ?? [];
-      ratios.push(final.portionGrams / aiFood.portionGrams);
+      ratios.push(final.portionGrams / aiGrams);
       ratiosByFood.set(key, ratios);
     }
   }

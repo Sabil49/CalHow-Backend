@@ -43,6 +43,16 @@ describe('buildPortionMemory', () => {
     expect(memory.size).toBe(0);
   });
 
+  it("learns against the AI's own estimate, so an accepted memory adjustment keeps the memory instead of cancelling it", () => {
+    // Memory had scaled the AI's 100 g to 150 g and the user kept 150 g.
+    const accepted: MemorySourceMeal = {
+      aiPrediction: { foods: [{ ...food('food-0', 'rice', 150), memoryAdjusted: true, aiPortionGrams: 100 }] },
+      foods: [food('food-0', 'rice', 150)],
+    };
+    const memory = buildPortionMemory([accepted, accepted, meal('rice', 100, 150)]);
+    expect(memory.get('rice')).toBe(1.5);
+  });
+
   it('keys by case-insensitive name', () => {
     const memory = buildPortionMemory([meal('Cooked White Rice', 100, 150), meal('cooked white rice ', 100, 150)]);
     expect(memory.get(memoryKey('COOKED WHITE RICE'))).toBe(1.5);
@@ -76,6 +86,7 @@ describe('runAnalyzePipeline with Smart Meal Memory', () => {
     expect(item.portionGrams).toBe(300);
     expect(item.portionLabel).toBe('300 g');
     expect(item.memoryAdjusted).toBe(true);
+    expect(item.aiPortionGrams).toBe(200);
     expect(remembered.prediction.calories).toBe(Math.round(130 * 3));
   });
 
