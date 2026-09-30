@@ -3,6 +3,8 @@ import { analyzeMealHandler } from './meals/analyze';
 import { clarifyMealHandler } from './meals/clarify';
 import { recalculateMealHandler } from './meals/recalculate';
 import { uploadMealImageHandler } from './meals/image';
+import { mealInsightsHandler } from './meals/insights';
+import { scanMenuHandler } from './meals/menu';
 
 /**
  * Cloud Functions v2 HTTPS entry points — one per mobile API endpoint,
@@ -27,3 +29,8 @@ export const analyzeMeal = onRequest({ ...RUNTIME_OPTS, secrets: ANALYSIS_SECRET
 export const clarifyMeal = onRequest({ ...RUNTIME_OPTS, secrets: ['USDA_FDC_API_KEY'] }, clarifyMealHandler);
 export const recalculateMeal = onRequest({ ...RUNTIME_OPTS, secrets: ['USDA_FDC_API_KEY'] }, recalculateMealHandler);
 export const uploadMealImage = onRequest(RUNTIME_OPTS, uploadMealImageHandler);
+
+// CalHow Pro. The menu scanner reads the photo AND estimates several dishes
+// through USDA, so it gets a longer timeout than a single meal scan.
+export const mealInsights = onRequest({ ...RUNTIME_OPTS, secrets: ['ANTHROPIC_API_KEY', 'REVENUECAT_SECRET_API_KEY'] }, mealInsightsHandler);
+export const scanMenu = onRequest({ ...RUNTIME_OPTS, timeoutSeconds: 180, secrets: ANALYSIS_SECRETS }, scanMenuHandler);

@@ -56,6 +56,19 @@ export const uploadMealImageRequestSchema = analyzeMealRequestSchema.extend({
 });
 
 /**
+ * CalHow Pro "AI Meal Insights". `tzOffsetMinutes` is the device's
+ * `Date#getTimezoneOffset()` — used only to find which meals fall on the
+ * same LOCAL day as this one; it can't grant access to anything.
+ */
+export const mealInsightsRequestSchema = z.object({
+  mealId: z.string().min(1, 'mealId is required').max(128),
+  tzOffsetMinutes: z.number().int().min(-840).max(840).default(0),
+});
+
+/** CalHow Pro "Restaurant & Menu Scanner" — same image shape as a meal scan. */
+export const scanMenuRequestSchema = analyzeMealRequestSchema;
+
+/**
  * Validates a request's already-parsed JSON body against `schema`
  * (Cloud Functions v2's `onRequest` parses JSON bodies into `req.body`
  * before the handler runs, unlike Next.js's `req.json()`). Throws

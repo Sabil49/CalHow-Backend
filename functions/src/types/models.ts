@@ -20,6 +20,8 @@ export interface FoodItem {
   /** 0-1. Optional because a user-added/edited food item may not have one. */
   confidence?: number;
   imageUrl?: string;
+  /** True when Smart Meal Memory (CalHow Pro) scaled the AI's portion from this user's past corrections — see services/analysis/portionMemory.ts. */
+  memoryAdjusted?: boolean;
 }
 
 export interface ClarificationQuestionOption {

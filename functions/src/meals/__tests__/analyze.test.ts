@@ -43,6 +43,11 @@ vi.mock('@/services/analysis/analyzePipeline', () => ({
   runAnalyzePipeline: (...args: unknown[]) => runAnalyzePipelineMock(...args),
 }));
 
+const loadPortionMemoryMock = vi.fn();
+vi.mock('@/services/analysis/portionMemory', () => ({
+  loadPortionMemory: (...args: unknown[]) => loadPortionMemoryMock(...args),
+}));
+
 const createPendingAnalysisMock = vi.fn();
 vi.mock('@/services/analysis/analysisStore', () => ({
   createPendingAnalysis: (...args: unknown[]) => createPendingAnalysisMock(...args),
@@ -73,6 +78,7 @@ const validBody = { imageBase64: 'ZmFrZQ==', mimeType: 'image/jpeg' };
 describe('analyzeMealHandler — scan-quota gate', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    loadPortionMemoryMock.mockResolvedValue(new Map());
     verifyIdTokenMock.mockImplementation(async (token: string) => {
       if (token !== 'valid-token') throw new Error('invalid token');
       return { uid: 'test-uid' };
@@ -201,6 +207,40 @@ describe('analyzeMealHandler — scan-quota gate', () => {
       await analyzeMealHandler(fakeReq(validBody), fakeRes());
 
       expect(refundScanMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Smart Meal Memory', () => {
+    it('loads portion memory for Pro users and hands it to the pipeline', async () => {
+      const memory = new Map([['cooked white rice', 1.5]]);
+      loadPortionMemoryMock.mockResolvedValue(memory);
+      consumeScanIfAllowedMock.mockResolvedValue({ allowed: true, entitlement: 'pro', scansUsedToday: null, scansRemainingToday: null, dailyScanLimit: null });
+
+      await analyzeMealHandler(fakeReq(validBody), fakeRes());
+
+      expect(loadPortionMemoryMock).toHaveBeenCalledWith('test-uid');
+      expect(runAnalyzePipelineMock.mock.calls[0]![1]).toMatchObject({ portionMemory: memory });
+    });
+
+    it('never loads memory for free users', async () => {
+      consumeScanIfAllowedMock.mockResolvedValue({ allowed: true, entitlement: 'free', scansUsedToday: 1, scansRemainingToday: 2, dailyScanLimit: 3 });
+
+      await analyzeMealHandler(fakeReq(validBody), fakeRes());
+
+      expect(loadPortionMemoryMock).not.toHaveBeenCalled();
+      expect(runAnalyzePipelineMock.mock.calls[0]![1].portionMemory).toBeUndefined();
+    });
+
+    it('still scans if memory fails to load', async () => {
+      loadPortionMemoryMock.mockRejectedValue(new Error('firestore down'));
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      consumeScanIfAllowedMock.mockResolvedValue({ allowed: true, entitlement: 'pro', scansUsedToday: null, scansRemainingToday: null, dailyScanLimit: null });
+
+      const res = fakeRes();
+      await analyzeMealHandler(fakeReq(validBody), res);
+
+      expect(res.statusCode).toBe(200);
+      expect(runAnalyzePipelineMock.mock.calls[0]![1].portionMemory).toBeUndefined();
     });
   });
 });

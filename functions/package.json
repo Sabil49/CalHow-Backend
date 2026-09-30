@@ -21,6 +21,7 @@
     "seed:demo": "tsx scripts/seedDemoAccount.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.129.0",
     "@google-cloud/firestore": "^9.2.0",
     "@google-cloud/storage": "^8.2.0",
     "express": "^5.2.1",

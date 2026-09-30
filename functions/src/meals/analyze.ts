@@ -7,6 +7,7 @@ import { getVisionProvider } from '@/services/ai/visionProvider';
 import { getNutritionLookupProvider } from '@/services/nutrition/nutritionLookup';
 import { runAnalyzePipeline } from '@/services/analysis/analyzePipeline';
 import { createPendingAnalysis } from '@/services/analysis/analysisStore';
+import { loadPortionMemory, type PortionMemory } from '@/services/analysis/portionMemory';
 import type { AnalyzeMealResponse } from '@/types/api';
 
 /** Failures that are our fault, not the user's — the consumed scan is refunded (see refundScan). */
@@ -55,12 +56,23 @@ export const analyzeMealHandler = withAuth(async (req: Request, res: Response, {
   // call, not after.
   const mimeType = detectImageMimeType(body.imageBase64) ?? body.mimeType;
 
+  // Smart Meal Memory (CalHow Pro). Best-effort: a failure to load it
+  // never fails the scan, it just runs without memory.
+  let portionMemory: PortionMemory | undefined;
+  if (quota.entitlement === 'pro') {
+    portionMemory = await loadPortionMemory(uid).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.warn('[analyzeMeal] portion memory unavailable; continuing without it', err);
+      return undefined;
+    });
+  }
+
   let pipelineResult: Awaited<ReturnType<typeof runAnalyzePipeline>>;
   let analysisId: string;
   try {
     pipelineResult = await runAnalyzePipeline(
       { imageBase64: body.imageBase64, mimeType },
-      { visionProvider: getVisionProvider(), lookupProvider: getNutritionLookupProvider() },
+      { visionProvider: getVisionProvider(), lookupProvider: getNutritionLookupProvider(), portionMemory },
     );
     ({ analysisId } = await createPendingAnalysis({
       uid,

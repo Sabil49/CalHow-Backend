@@ -4,6 +4,7 @@ import { calculateFoodItemTotals, calculateMealTotalsFromMatches, calculateOvera
 import { evaluateClarificationPolicy } from './clarification';
 import type { VisionAnalysisInput, VisionProvider } from '@/services/ai/visionProvider';
 import type { NutritionLookupProvider } from '@/services/nutrition/nutritionLookup';
+import { memoryKey, type PortionMemory } from './portionMemory';
 import type { AiMealPrediction, ClarificationQuestion, FoodItem } from '@/types/models';
 import type { AiVisionResult, FoodMatch } from '@/types/nutrition';
 
@@ -24,6 +25,8 @@ import type { AiVisionResult, FoodMatch } from '@/types/nutrition';
 export interface AnalyzePipelineDeps {
   visionProvider: VisionProvider;
   lookupProvider: NutritionLookupProvider;
+  /** Smart Meal Memory (CalHow Pro) — this user's learned portion multipliers; omitted for free users. See ./portionMemory.ts. */
+  portionMemory?: PortionMemory;
 }
 
 export interface AnalyzePipelineResult {
@@ -51,10 +54,14 @@ export async function runAnalyzePipeline(input: VisionAnalysisInput, deps: Analy
   // a specific food if its portion grams are invalid/undeterminable —
   // failure policy: invalid portion grams fail the request, not a
   // guessed default (see services/foodMatching/normalizer.ts).
+  const memoryAdjusted: boolean[] = [];
   const foodMatches = await Promise.all(
-    aiResult.detectedFoods.map((detected) => {
+    aiResult.detectedFoods.map((detected, index) => {
       const normalized = normalizer.normalize(detected);
-      return matcher.match(detected.rawName, normalized);
+      const ratio = deps.portionMemory?.get(memoryKey(normalized.normalizedName));
+      memoryAdjusted[index] = ratio != null;
+      const portionGrams = ratio != null ? Math.round(normalized.portionGrams * ratio) : normalized.portionGrams;
+      return matcher.match(detected.rawName, { ...normalized, portionGrams });
     }),
   );
 
@@ -79,11 +86,15 @@ export async function runAnalyzePipeline(input: VisionAnalysisInput, deps: Analy
     id: `food-${index}`,
     name: match.normalizedName,
     // Prefer the AI's own human-friendly label when it gave one;
-    // otherwise fall back to a plain gram figure.
-    portionLabel: aiResult.detectedFoods[index]?.estimatedPortionLabel ?? `${match.portionGrams} g`,
+    // otherwise fall back to a plain gram figure. A memory-adjusted
+    // portion no longer matches the AI's label, so it's shown in grams.
+    portionLabel: memoryAdjusted[index]
+      ? `${match.portionGrams} g`
+      : (aiResult.detectedFoods[index]?.estimatedPortionLabel ?? `${match.portionGrams} g`),
     portionGrams: match.portionGrams,
     calories: calculateFoodItemTotals(match.portionGrams, match.nutrition!).calories,
     confidence: match.matchConfidence,
+    ...(memoryAdjusted[index] ? { memoryAdjusted: true } : {}),
   }));
 
   const clarificationQuestions = evaluateClarificationPolicy(aiResult, foodMatches);

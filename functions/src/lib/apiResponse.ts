@@ -18,6 +18,8 @@ export const API_ERROR_CODES = [
   'image_upload_error',
   'rate_limited',
   'scan_limit_reached',
+  'pro_required',
+  'not_found',
   'not_implemented',
   'internal_error',
 ] as const;
@@ -36,6 +38,8 @@ const STATUS_BY_CODE: Record<ApiErrorCode, number> = {
   image_upload_error: 502,
   rate_limited: 429,
   scan_limit_reached: 429,
+  pro_required: 403,
+  not_found: 404,
   not_implemented: 501,
   internal_error: 500,
 };

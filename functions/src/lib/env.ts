@@ -68,6 +68,10 @@ const anthropicEnvSchema = z.object({
   ANTHROPIC_API_KEY: z.string().min(1, 'ANTHROPIC_API_KEY is required'),
   ANTHROPIC_VISION_MODEL: z.string().min(1).default('claude-sonnet-5'),
   ANTHROPIC_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
+  /** CalHow Pro "AI Meal Insights" (services/insights/) — text only. */
+  ANTHROPIC_INSIGHTS_MODEL: z.string().min(1).default('claude-opus-5-5'),
+  /** CalHow Pro "Restaurant & Menu Scanner" (services/menu/) — reads a menu photo. */
+  ANTHROPIC_MENU_MODEL: z.string().min(1).default('claude-opus-5-5'),
 });
 
 export function getAnthropicEnv() {
