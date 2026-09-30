@@ -28,6 +28,12 @@ describe('buildPortionMemory', () => {
     expect(memory.has('rice')).toBe(false);
   });
 
+  it('ignores "log again" copies, so one correction re-logged many times still counts once', () => {
+    const original = meal('rice', 150, 300);
+    const relogs = Array.from({ length: 5 }, (_, i) => ({ ...original, relogOf: `meal-${i}` }));
+    expect(buildPortionMemory([original, ...relogs]).size).toBe(0);
+  });
+
   it('clamps extreme ratios', () => {
     const memory = buildPortionMemory([meal('rice', 50, 500), meal('rice', 50, 400)]);
     expect(memory.get('rice')).toBe(MAX_RATIO);

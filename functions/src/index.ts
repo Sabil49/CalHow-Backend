@@ -1,4 +1,6 @@
 import { onRequest } from 'firebase-functions/v2/https';
+import * as functionsV1 from 'firebase-functions/v1';
+import { deleteBackendUserData } from './account/deleteUserData';
 import { analyzeMealHandler } from './meals/analyze';
 import { clarifyMealHandler } from './meals/clarify';
 import { recalculateMealHandler } from './meals/recalculate';
@@ -34,3 +36,8 @@ export const uploadMealImage = onRequest(RUNTIME_OPTS, uploadMealImageHandler);
 // through USDA, so it gets a longer timeout than a single meal scan.
 export const mealInsights = onRequest({ ...RUNTIME_OPTS, secrets: ['ANTHROPIC_API_KEY', 'REVENUECAT_SECRET_API_KEY'] }, mealInsightsHandler);
 export const scanMenu = onRequest({ ...RUNTIME_OPTS, timeoutSeconds: 180, secrets: ANALYSIS_SECRETS }, scanMenuHandler);
+
+// Account deletion cleanup: when the app deletes a Firebase Auth user,
+// remove what only the backend can reach (meal photos, pending analyses).
+// A v1 trigger because v2 has no non-blocking "user deleted" event.
+export const onAccountDeleted = functionsV1.auth.user().onDelete((user) => deleteBackendUserData(user.uid));

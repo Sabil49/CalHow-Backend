@@ -30,6 +30,8 @@ export const MEMORY_MEAL_WINDOW = 100;
 export type PortionMemory = Map<string, number>;
 
 export interface MemorySourceMeal {
+  /** Set on a "log again" copy of an earlier meal (calhow-mobile relogMeal) — its foods are that meal's, not a new AI estimate the user reviewed. */
+  relogOf?: string;
   foods?: FoodItem[];
   aiPrediction?: { foods?: FoodItem[] };
 }
@@ -48,6 +50,9 @@ export function buildPortionMemory(meals: MemorySourceMeal[]): PortionMemory {
   const ratiosByFood = new Map<string, number[]>();
 
   for (const meal of meals) {
+    // A re-logged copy repeats an earlier meal's AI estimate and the user's
+    // edits to it; counting it would turn one correction into several.
+    if (meal.relogOf) continue;
     const aiFoods = meal.aiPrediction?.foods ?? [];
     const finalById = new Map((meal.foods ?? []).map((food) => [food.id, food]));
     for (const aiFood of aiFoods) {
