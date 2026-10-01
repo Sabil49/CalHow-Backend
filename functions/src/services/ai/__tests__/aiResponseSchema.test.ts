@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseAiVisionResponse } from '../aiResponseSchema';
+import { oilQuestionApplies, parseAiVisionResponse } from '../aiResponseSchema';
 import { ApiRouteError } from '@/lib/apiResponse';
 
 describe('parseAiVisionResponse', () => {
@@ -117,5 +117,20 @@ describe('oil clarification and missing overall confidence', () => {
       'test',
     );
     expect(result.overallUncertainty).toBeCloseTo(0.3);
+  });
+});
+
+describe('oilQuestionApplies', () => {
+  it('keeps the oil question for fried dishes whose names sound like fruit or drinks', () => {
+    expect(oilQuestionApplies({ name: 'banana fritters', preparation: 'fried' })).toBe(true);
+    expect(oilQuestionApplies({ name: 'orange chicken', preparation: 'fried' })).toBe(true);
+    expect(oilQuestionApplies({ name: 'apple fritter' })).toBe(true);
+  });
+
+  it('still drops it for drinks, fruit and no-oil preparations', () => {
+    expect(oilQuestionApplies({ name: 'banana shake', preparation: 'blended' })).toBe(false);
+    expect(oilQuestionApplies({ name: 'mango' })).toBe(false);
+    expect(oilQuestionApplies({ name: 'steamed rice', preparation: 'steamed' })).toBe(false);
+    expect(oilQuestionApplies({ name: 'chicken curry', preparation: 'sauteed' })).toBe(true);
   });
 });

@@ -51,8 +51,14 @@ export const aiVisionResponseSchema = z.object({
 const NO_OIL_PREPARATIONS = new Set(['raw', 'fresh', 'blended', 'boiled', 'steamed', 'poached', 'brewed', 'chilled', 'frozen', 'uncooked', 'squeezed', 'juiced', 'shaken', 'sliced', 'whole']);
 const NO_OIL_NAME = /\b(shake|milkshake|smoothie|juice|milk|lassi|coffee|latte|cappuccino|espresso|tea|chai|water|soda|cola|drink|beverage|yogh?urt|curd|fruit|apple|banana|orange|berr(y|ies)|grapes?|mango|melon|watermelon|papaya|pineapple|kiwi|pear|peach|plum|dates?)\b/i;
 
+/** Preparations that use added fat — these keep the oil question even when the name sounds like fruit or a drink ("banana fritters", "orange chicken"). */
+const OIL_PREPARATIONS = /\b(fried|deep|stir|sauteed|sautéed|pan|roasted|grilled|seared)\b/i;
+
 export function oilQuestionApplies(food: { name: string; preparation?: string }): boolean {
-  if (food.preparation && NO_OIL_PREPARATIONS.has(food.preparation.trim().toLowerCase())) return false;
+  const preparation = food.preparation?.trim().toLowerCase();
+  if (preparation && OIL_PREPARATIONS.test(preparation)) return true;
+  if (/\bfr(ied|itters?)\b/i.test(food.name)) return true;
+  if (preparation && NO_OIL_PREPARATIONS.has(preparation)) return false;
   return !NO_OIL_NAME.test(food.name);
 }
 
