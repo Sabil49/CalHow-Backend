@@ -90,8 +90,20 @@ const QUESTION_TEMPLATES: Record<string, ClarificationQuestion> = {
  *      nutrition data" spirit — so this policy only ever asks about
  *      topics it has real templates for.
  */
+/** "Was oil used to cook the chicken curry and rice?" — names the foods the AI was unsure about (up to two), instead of an ambiguous "this". */
+function oilQuestionFor(aiResult: Partial<Pick<AiVisionResult, 'detectedFoods'>>): ClarificationQuestion {
+  const template = QUESTION_TEMPLATES.oil_amount!;
+  const names = (aiResult.detectedFoods ?? [])
+    .filter((food) => food.uncertaintyTopics?.includes('oil_amount'))
+    .map((food) => food.rawName.trim().toLowerCase())
+    .filter(Boolean);
+  if (names.length === 0) return template;
+  const subject = names.length === 1 ? names[0] : names.length === 2 ? `${names[0]} and ${names[1]}` : `${names[0]}, ${names[1]} and other items`;
+  return { ...template, question: `Was oil used to cook the ${subject}?` };
+}
+
 export function evaluateClarificationPolicy(
-  aiResult: Pick<AiVisionResult, 'overallUncertainty' | 'suggestedClarificationTopics'>,
+  aiResult: Pick<AiVisionResult, 'overallUncertainty' | 'suggestedClarificationTopics'> & Partial<Pick<AiVisionResult, 'detectedFoods'>>,
   _foodMatches: FoodMatch[],
   config: ClarificationPolicyConfig = DEFAULT_CLARIFICATION_POLICY_CONFIG,
 ): ClarificationQuestion[] {
@@ -100,7 +112,7 @@ export function evaluateClarificationPolicy(
 
   const questions: ClarificationQuestion[] = [];
   for (const topic of topics) {
-    const template = QUESTION_TEMPLATES[topic];
+    const template = topic === 'oil_amount' ? oilQuestionFor(aiResult) : QUESTION_TEMPLATES[topic];
     if (template && !questions.some((q) => q.id === template.id)) {
       questions.push(template);
     }

@@ -68,6 +68,36 @@ export const mealInsightsRequestSchema = z.object({
 /** CalHow Pro "Restaurant & Menu Scanner" — same image shape as a meal scan. */
 export const scanMenuRequestSchema = analyzeMealRequestSchema;
 
+/** CalHow Pro "What Should I Eat Next?" new ideas — what's left of the user's day, as the app computed it. */
+export const mealIdeasRequestSchema = z.object({
+  remainingCalories: z.number().min(100).max(6000),
+  remainingProtein: z.number().min(0).max(500).optional(),
+  mealType: z.enum(['breakfast', 'lunch', 'dinner', 'snack']),
+});
+
+/**
+ * On-demand estimate for one dish a menu scan returned as `pending`. The
+ * components come from the client (it got them from /scanMenu), but they
+ * only ever drive a USDA lookup + calculation for this user's own pending
+ * analysis, so a modified body can't do more than estimate a different
+ * dish. Bounds keep it to one dish's worth of lookups.
+ */
+export const estimateMenuDishRequestSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  description: z.string().max(300).optional(),
+  confidence: z.number().min(0).max(1),
+  components: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(100),
+        preparation: z.string().max(40),
+        portionGrams: z.number().positive().max(2000),
+      }),
+    )
+    .min(1)
+    .max(4),
+});
+
 /**
  * Validates a request's already-parsed JSON body against `schema`
  * (Cloud Functions v2's `onRequest` parses JSON bodies into `req.body`

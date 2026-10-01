@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { estimateMenuDishes, MAX_COMPONENTS_PER_DISH, MAX_MENU_DISHES, toVisionResult, type MenuAiResult } from '../menuScan';
+import { EAGER_ESTIMATE_DISHES, estimateMenuDish, estimateMenuDishes, MAX_COMPONENTS_PER_DISH, MAX_MENU_DISHES, toVisionResult, type MenuAiResult } from '../menuScan';
 import { ApiRouteError } from '@/lib/apiResponse';
 import type { NutritionLookupProvider } from '@/services/nutrition/nutritionLookup';
 import type { NutritionFactsPer100g } from '@/types/nutrition';
@@ -54,11 +54,20 @@ describe('estimateMenuDishes', () => {
     expect(results[1]!.estimate!.prediction.calories).toBe(390);
   });
 
-  it('caps the number of dishes', async () => {
+  it('reads up to MAX_MENU_DISHES, estimates the first EAGER_ESTIMATE_DISHES and leaves the rest pending', async () => {
     const dishes = Array.from({ length: MAX_MENU_DISHES + 3 }, (_, i) => dish(`Dish ${i}`, [['white rice', 100]]));
-    const results = await estimateMenuDishes({ isMenu: true, dishes }, 'm', lookup({ rice: facts(130) }));
+    const provider = lookup({ rice: facts(130) });
+    const results = await estimateMenuDishes({ isMenu: true, dishes }, 'm', provider);
     expect(results).toHaveLength(MAX_MENU_DISHES);
-    expect(results.map((r) => r.name)).toEqual(dishes.slice(0, MAX_MENU_DISHES).map((d) => d.name));
+    expect(results.filter((r) => r.estimate)).toHaveLength(EAGER_ESTIMATE_DISHES);
+    const pending = results[EAGER_ESTIMATE_DISHES]!;
+    expect(pending.estimate).toBeUndefined();
+    expect(pending.pending).toEqual({ components: [{ name: 'white rice', preparation: 'cooked', portionGrams: 100 }], confidence: 0.8 });
+  });
+
+  it('estimates a pending dish on demand', async () => {
+    const result = await estimateMenuDish(dish('Rice Bowl', [['white rice', 300]]), 'm', lookup({ rice: facts(130) }));
+    expect(result.estimate!.prediction.calories).toBe(390);
   });
 
   it('rejects a photo that is not a menu', async () => {

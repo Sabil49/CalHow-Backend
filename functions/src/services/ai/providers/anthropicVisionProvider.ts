@@ -48,7 +48,7 @@ For each distinct food item visible:
 - Estimate its weight in grams based on the visible portion size — always provide a number, even if it's an approximation.
 - Optionally give a human-friendly portion description (e.g. "1 medium fillet", "1/2 cup").
 - Rate your confidence (0 to 1) that you've correctly identified this specific item.
-- If you cannot visually tell whether or how much cooking oil or added fat was used to prepare this food, include "oil_amount" in its uncertaintyTopics. Only use this specific topic — do not invent other topic strings.
+- Include "oil_amount" in a food's uncertaintyTopics only when it is a cooked dish that is typically made with added oil or fat (fried, sautéed, stir-fried, roasted, grilled, curries, gravies) and you cannot tell how much was used. Never use it for drinks (shakes, smoothies, juice, tea, coffee, milk), fruit, raw vegetables, plain dairy, or foods that are boiled, steamed or blended. Only use this specific topic — do not invent other topic strings.
 
 Also report your overall confidence (0 to 1) in the entire analysis.
 

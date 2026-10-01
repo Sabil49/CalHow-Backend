@@ -6,7 +6,8 @@ import { clarifyMealHandler } from './meals/clarify';
 import { recalculateMealHandler } from './meals/recalculate';
 import { uploadMealImageHandler } from './meals/image';
 import { mealInsightsHandler } from './meals/insights';
-import { scanMenuHandler } from './meals/menu';
+import { estimateMenuDishHandler, scanMenuHandler } from './meals/menu';
+import { mealIdeasHandler } from './meals/mealIdeas';
 
 /**
  * Cloud Functions v2 HTTPS entry points — one per mobile API endpoint,
@@ -36,6 +37,8 @@ export const uploadMealImage = onRequest(RUNTIME_OPTS, uploadMealImageHandler);
 // through USDA, so it gets a longer timeout than a single meal scan.
 export const mealInsights = onRequest({ ...RUNTIME_OPTS, secrets: ['ANTHROPIC_API_KEY', 'REVENUECAT_SECRET_API_KEY'] }, mealInsightsHandler);
 export const scanMenu = onRequest({ ...RUNTIME_OPTS, timeoutSeconds: 180, secrets: ANALYSIS_SECRETS }, scanMenuHandler);
+export const estimateMenuDish = onRequest({ ...RUNTIME_OPTS, secrets: ANALYSIS_SECRETS }, estimateMenuDishHandler);
+export const mealIdeas = onRequest({ ...RUNTIME_OPTS, timeoutSeconds: 120, secrets: ANALYSIS_SECRETS }, mealIdeasHandler);
 
 // Account deletion cleanup: when the app deletes a Firebase Auth user,
 // remove what only the backend can reach (meal photos, pending analyses).

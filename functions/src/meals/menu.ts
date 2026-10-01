@@ -1,11 +1,12 @@
 import type { Request, Response } from 'express';
 import { withAuth } from '@/lib/auth';
 import { jsonSuccess } from '@/lib/apiResponse';
-import { assertImageWithinSizeLimit, detectImageMimeType, parseJsonBody, scanMenuRequestSchema } from '@/lib/validation';
+import { assertImageWithinSizeLimit, detectImageMimeType, estimateMenuDishRequestSchema, parseJsonBody, scanMenuRequestSchema } from '@/lib/validation';
+import { getAnthropicEnv } from '@/lib/env';
 import { assertPro } from '@/services/usage/requirePro';
 import { getNutritionLookupProvider } from '@/services/nutrition/nutritionLookup';
 import { createPendingAnalysis } from '@/services/analysis/analysisStore';
-import { estimateMenuDishes, readMenu } from '@/services/menu/menuScan';
+import { estimateMenuDish, estimateMenuDishes, readMenu, type MenuDishResult } from '@/services/menu/menuScan';
 import type { AiMealPrediction, ClarificationQuestion } from '@/types/models';
 
 /**
@@ -29,6 +30,32 @@ export interface ScanMenuDish {
   needsClarification?: boolean;
   clarificationQuestions?: ClarificationQuestion[];
   unavailableReason?: string;
+  /** Not estimated yet — send to POST /estimateMenuDish (with name/description) to estimate it. */
+  pending?: MenuDishResult['pending'];
+}
+
+/** Stores an estimated dish as a pending analysis (so it can be logged through review) and shapes it for the app. */
+export async function toScanMenuDish(uid: string, result: MenuDishResult): Promise<ScanMenuDish> {
+  if (!result.estimate) {
+    return { name: result.name, description: result.description, unavailableReason: result.unavailableReason, pending: result.pending };
+  }
+  const { aiResult, foodMatches, prediction, clarificationQuestions } = result.estimate;
+  const hasQuestions = clarificationQuestions.length > 0;
+  const { analysisId } = await createPendingAnalysis({
+    uid,
+    aiResult,
+    foodMatches,
+    prediction,
+    clarificationQuestions: hasQuestions ? clarificationQuestions : undefined,
+  });
+  return {
+    name: result.name,
+    description: result.description,
+    analysisId,
+    prediction,
+    needsClarification: hasQuestions,
+    clarificationQuestions: hasQuestions ? clarificationQuestions : undefined,
+  };
 }
 
 export interface ScanMenuResponse {
@@ -44,31 +71,23 @@ export const scanMenuHandler = withAuth(async (req: Request, res: Response, { ui
   const { menu, model } = await readMenu({ imageBase64: body.imageBase64, mimeType });
   const results = await estimateMenuDishes(menu, model, getNutritionLookupProvider());
 
-  const dishes = await Promise.all(
-    results.map(async (result): Promise<ScanMenuDish> => {
-      if (!result.estimate) {
-        return { name: result.name, description: result.description, unavailableReason: result.unavailableReason };
-      }
-      const { aiResult, foodMatches, prediction, clarificationQuestions } = result.estimate;
-      const hasQuestions = clarificationQuestions.length > 0;
-      const { analysisId } = await createPendingAnalysis({
-        uid,
-        aiResult,
-        foodMatches,
-        prediction,
-        clarificationQuestions: hasQuestions ? clarificationQuestions : undefined,
-      });
-      return {
-        name: result.name,
-        description: result.description,
-        analysisId,
-        prediction,
-        needsClarification: hasQuestions,
-        clarificationQuestions: hasQuestions ? clarificationQuestions : undefined,
-      };
-    }),
-  );
+  const dishes = await Promise.all(results.map((result) => toScanMenuDish(uid, result)));
 
   const response: ScanMenuResponse = { dishes };
   jsonSuccess(res, response);
+});
+
+/** POST /estimateMenuDish — estimates one dish a menu scan left `pending`. Pro only. */
+export const estimateMenuDishHandler = withAuth(async (req: Request, res: Response, { uid }) => {
+  const body = parseJsonBody(req, estimateMenuDishRequestSchema);
+  await assertPro(uid);
+
+  const { ANTHROPIC_MENU_MODEL } = getAnthropicEnv();
+  const result = await estimateMenuDish(
+    { name: body.name, description: body.description ?? '', confidence: body.confidence, components: body.components },
+    ANTHROPIC_MENU_MODEL,
+    getNutritionLookupProvider(),
+  );
+  const dish: ScanMenuDish = await toScanMenuDish(uid, result);
+  jsonSuccess(res, dish);
 });

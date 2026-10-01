@@ -16,7 +16,7 @@ function meal(name: string, aiGrams: number, finalGrams: number, finalName = nam
 describe('buildPortionMemory', () => {
   it('learns a consistent correction (median of confirmed / AI grams)', () => {
     const memory = buildPortionMemory([meal('cooked white rice', 150, 225), meal('cooked white rice', 200, 300), meal('cooked white rice', 100, 140)]);
-    expect(memory.get('cooked white rice')).toBe(1.5);
+    expect(memory.get(memoryKey('cooked white rice'))).toBe(1.5);
   });
 
   it('needs at least two observations', () => {
@@ -103,5 +103,29 @@ describe('runAnalyzePipeline with Smart Meal Memory', () => {
     );
     expect(result.prediction.foods[0]!.portionGrams).toBe(200);
     expect(result.prediction.foods[0]!.portionLabel).toBe('1 cup');
+  });
+});
+
+describe('memoryKey', () => {
+  it('ignores preparation words, so the same food described differently shares one memory', () => {
+    expect(memoryKey('banana smoothie raw')).toBe('banana smoothie');
+    expect(memoryKey('Banana Smoothie Blended')).toBe('banana smoothie');
+    expect(memoryKey('chicken thigh stir fried')).toBe('chicken thigh');
+    expect(memoryKey('cooked white rice')).toBe('white rice');
+  });
+
+  it('keeps the name when it is only preparation words', () => {
+    expect(memoryKey('Fried')).toBe('fried');
+  });
+
+  it('learns across "raw" and "blended" scans of the same food (real test-account sequence)', () => {
+    const memory = buildPortionMemory([
+      meal('banana smoothie blended', 350, 350),
+      meal('banana smoothie blended', 350, 350),
+      meal('banana smoothie raw', 350, 700),
+      meal('banana smoothie blended', 350, 700),
+      meal('banana smoothie blended', 350, 700),
+    ]);
+    expect(memory.get(memoryKey('banana smoothie raw'))).toBe(2);
   });
 });

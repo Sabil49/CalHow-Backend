@@ -22,8 +22,15 @@ import type { AiVisionResult } from '@/types/nutrition';
  * a partial one.
  */
 
-/** Dishes per menu photo — each costs several USDA lookups, which share one API key. */
-export const MAX_MENU_DISHES = 8;
+/** Dishes read from one menu photo. */
+export const MAX_MENU_DISHES = 25;
+/**
+ * Dishes whose nutrition is estimated right away. Each estimate costs
+ * several USDA lookups (one shared API key for all users), so the rest come
+ * back with their components and are estimated when the user taps them
+ * (POST /estimateMenuDish).
+ */
+export const EAGER_ESTIMATE_DISHES = 8;
 export const MAX_COMPONENTS_PER_DISH = 4;
 /** Dishes processed at the same time. */
 const DISH_CONCURRENCY = 3;
@@ -50,7 +57,7 @@ export type MenuAiResult = z.infer<typeof menuSchema>;
 
 const SYSTEM_PROMPT = `You read photos of restaurant menus for CalHow, a calorie tracking app, and describe what each dish would typically be made of, so the app can estimate its nutrition from a food database.
 
-For each dish on the menu (up to ${MAX_MENU_DISHES}, in the order they appear; skip drinks, desserts only if space runs out, and section headings):
+For each dish on the menu (up to ${MAX_MENU_DISHES}, in the order they appear; skip section headings, and skip plain drinks such as water, soda, tea or coffee):
 - name: the dish name as written on the menu.
 - description: a few plain words about the dish in English, or an empty string.
 - components: up to ${MAX_COMPONENTS_PER_DISH} main components of a typical single restaurant serving, each a simple, specific, database-friendly food name in English (e.g. "cooked white rice", "chicken breast", "naan bread", "cheddar cheese"), a single-word preparation method (e.g. "grilled", "fried", "boiled", "raw", "baked"), and your best estimate of its weight in grams. Use the menu's own description when it lists ingredients or sizes.
@@ -60,9 +67,13 @@ Report no calories, protein, carbohydrate, fat or fiber values — those are cal
 
 If the photo is not a menu, set isMenu to false and return no dishes.`;
 
+export type MenuDish = MenuAiResult['dishes'][number];
+
 export interface MenuDishResult {
   name: string;
   description?: string;
+  /** Set on dishes past EAGER_ESTIMATE_DISHES: what to send back to estimate it on demand. */
+  pending?: Pick<MenuDish, 'components' | 'confidence'>;
   /** Set when nutrition was estimated; the dish can then be logged through the normal review flow. */
   estimate?: AnalyzePipelineResult;
   /** Set when it couldn't be (e.g. no reliable USDA match for a component). */
@@ -106,9 +117,9 @@ export async function readMenu(input: VisionAnalysisInput): Promise<{ menu: Menu
       { type: 'text', text: 'Read the dishes on this menu.' },
     ],
     schema: menuSchema,
-    maxTokens: 8000,
+    maxTokens: 16000,
     effort: 'low',
-    timeoutMs: 75_000,
+    timeoutMs: 100_000,
   });
   return { menu, model: ANTHROPIC_MENU_MODEL };
 }
@@ -123,21 +134,33 @@ export async function estimateMenuDishes(
     throw new ApiRouteError('invalid_request', 'No menu dishes were found in this photo. Please try again with a clear, well-lit photo of the menu.');
   }
 
-  return mapWithConcurrency(dishes, DISH_CONCURRENCY, async (dish): Promise<MenuDishResult> => {
-    const base = { name: dish.name.trim(), description: dish.description.trim() || undefined };
-    try {
-      const aiResult = toVisionResult(dish, modelVersion);
-      const estimate = await runAnalyzePipeline(
-        // The image was already read; this "provider" just hands the dish's components to the shared pipeline.
-        { imageBase64: '', mimeType: 'image/jpeg' },
-        { visionProvider: { analyzeMealImage: async () => aiResult }, lookupProvider },
-      );
-      return { ...base, estimate };
-    } catch (err) {
-      if (err instanceof ApiRouteError) {
-        return { ...base, unavailableReason: "We couldn't find reliable nutrition data for this dish." };
-      }
-      throw err;
+  const eager = dishes.slice(0, EAGER_ESTIMATE_DISHES);
+  const later = dishes.slice(EAGER_ESTIMATE_DISHES).map(
+    (dish): MenuDishResult => ({
+      name: dish.name.trim(),
+      description: dish.description.trim() || undefined,
+      pending: { components: dish.components.slice(0, MAX_COMPONENTS_PER_DISH), confidence: dish.confidence },
+    }),
+  );
+  const estimated = await mapWithConcurrency(eager, DISH_CONCURRENCY, (dish) => estimateMenuDish(dish, modelVersion, lookupProvider));
+  return [...estimated, ...later];
+}
+
+/** Estimates one dish through the shared scan pipeline — used for the first dishes of a scan and for on-demand estimates. */
+export async function estimateMenuDish(dish: MenuDish, modelVersion: string, lookupProvider: NutritionLookupProvider): Promise<MenuDishResult> {
+  const base = { name: dish.name.trim(), description: dish.description.trim() || undefined };
+  try {
+    const aiResult = toVisionResult(dish, modelVersion);
+    const estimate = await runAnalyzePipeline(
+      // The image was already read; this "provider" just hands the dish's components to the shared pipeline.
+      { imageBase64: '', mimeType: 'image/jpeg' },
+      { visionProvider: { analyzeMealImage: async () => aiResult }, lookupProvider },
+    );
+    return { ...base, estimate };
+  } catch (err) {
+    if (err instanceof ApiRouteError) {
+      return { ...base, unavailableReason: "We couldn't find reliable nutrition data for this dish." };
     }
-  });
+    throw err;
+  }
 }

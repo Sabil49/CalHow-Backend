@@ -67,6 +67,12 @@ export const analyzeMealHandler = withAuth(async (req: Request, res: Response, {
     });
   }
 
+  if (portionMemory) {
+    // Counts only — no food names or user data in logs.
+    // eslint-disable-next-line no-console
+    console.log(`[analyzeMeal] Smart Meal Memory loaded: ${portionMemory.size} food(s) remembered`);
+  }
+
   let pipelineResult: Awaited<ReturnType<typeof runAnalyzePipeline>>;
   let analysisId: string;
   try {

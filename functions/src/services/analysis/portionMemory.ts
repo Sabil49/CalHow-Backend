@@ -36,8 +36,23 @@ export interface MemorySourceMeal {
   aiPrediction?: { foods?: FoodItem[] };
 }
 
+/**
+ * Preparation words the normalizer puts into food names ("banana smoothie
+ * blended", "chicken thigh stir fried"). The AI picks these inconsistently
+ * for the same food from scan to scan ("raw" one time, "blended" the next),
+ * which split one food's corrections across several keys so it never
+ * reached MIN_SAMPLES. Portion habits are about the food, not how it was
+ * described, so they're left out of the key.
+ */
+const PREPARATION_WORDS = new Set([
+  'raw', 'fresh', 'blended', 'cooked', 'uncooked', 'boiled', 'steamed', 'poached', 'grilled', 'fried', 'stir', 'deep',
+  'sauteed', 'sautéed', 'roasted', 'baked', 'braised', 'toasted', 'smoked', 'plain', 'prepared', 'homemade',
+]);
+
 export function memoryKey(foodName: string): string {
-  return foodName.trim().toLowerCase();
+  const words = foodName.toLowerCase().split(/[^a-zà-ÿ0-9]+/).filter(Boolean);
+  const kept = words.filter((word) => !PREPARATION_WORDS.has(word));
+  return (kept.length > 0 ? kept : words).join(' ');
 }
 
 function median(values: number[]): number {

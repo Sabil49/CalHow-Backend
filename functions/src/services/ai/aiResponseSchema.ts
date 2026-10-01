@@ -38,8 +38,23 @@ export const aiFoodDetectionSchema = z.object({
 
 export const aiVisionResponseSchema = z.object({
   foods: z.array(aiFoodDetectionSchema),
-  overallConfidence: z.number().min(0).max(1),
+  /** Optional: the model occasionally omits it — the mean per-food confidence is used then (see below). */
+  overallConfidence: z.number().min(0).max(1).optional(),
 });
+
+/**
+ * Foods where "how much oil was used?" can't meaningfully apply — drinks,
+ * fruit, dairy, and anything prepared without a pan. The model sometimes
+ * flags oil uncertainty on these anyway (e.g. a banana shake); asking the
+ * user about cooking oil for them is just noise, so the flag is dropped.
+ */
+const NO_OIL_PREPARATIONS = new Set(['raw', 'fresh', 'blended', 'boiled', 'steamed', 'poached', 'brewed', 'chilled', 'frozen', 'uncooked', 'squeezed', 'juiced', 'shaken', 'sliced', 'whole']);
+const NO_OIL_NAME = /\b(shake|milkshake|smoothie|juice|milk|lassi|coffee|latte|cappuccino|espresso|tea|chai|water|soda|cola|drink|beverage|yogh?urt|curd|fruit|apple|banana|orange|berr(y|ies)|grapes?|mango|melon|watermelon|papaya|pineapple|kiwi|pear|peach|plum|dates?)\b/i;
+
+export function oilQuestionApplies(food: { name: string; preparation?: string }): boolean {
+  if (food.preparation && NO_OIL_PREPARATIONS.has(food.preparation.trim().toLowerCase())) return false;
+  return !NO_OIL_NAME.test(food.name);
+}
 
 export type AiVisionResponsePayload = z.infer<typeof aiVisionResponseSchema>;
 
@@ -59,24 +74,31 @@ export function parseAiVisionResponse(raw: unknown, modelVersion: string): AiVis
     throw new ApiRouteError('ai_provider_error', `AI response did not match the expected structure: ${message}`);
   }
 
-  const detectedFoods: AiDetectedFood[] = result.data.foods.map((food) => ({
-    rawName: food.name,
-    estimatedPortionGrams: food.portionGrams,
-    estimatedPortionLabel: food.portionLabel,
-    preparationMethod: food.preparation,
-    detectionConfidence: food.confidence,
-    uncertaintyTopics: food.uncertaintyTopics,
-  }));
+  const detectedFoods: AiDetectedFood[] = result.data.foods.map((food) => {
+    const topics = (food.uncertaintyTopics ?? []).filter((topic) => topic !== 'oil_amount' || oilQuestionApplies(food));
+    return {
+      rawName: food.name,
+      estimatedPortionGrams: food.portionGrams,
+      estimatedPortionLabel: food.portionLabel,
+      preparationMethod: food.preparation,
+      detectionConfidence: food.confidence,
+      uncertaintyTopics: topics.length > 0 ? topics : undefined,
+    };
+  });
 
   // Aggregated for AiVisionResult.suggestedClarificationTopics (meal-wide
   // signal already consumed by evaluateClarificationPolicy) — the AI
   // reports uncertainty per food; this just de-duplicates it up to the
   // meal level rather than asking the model to report the same thing twice.
-  const suggestedClarificationTopics = Array.from(new Set(result.data.foods.flatMap((food) => food.uncertaintyTopics ?? [])));
+  const suggestedClarificationTopics = Array.from(new Set(detectedFoods.flatMap((food) => food.uncertaintyTopics ?? [])));
+
+  const foods = result.data.foods;
+  const overallConfidence =
+    result.data.overallConfidence ?? (foods.length > 0 ? foods.reduce((sum, food) => sum + food.confidence, 0) / foods.length : 0);
 
   return {
     detectedFoods,
-    overallUncertainty: 1 - result.data.overallConfidence,
+    overallUncertainty: 1 - overallConfidence,
     suggestedClarificationTopics: suggestedClarificationTopics.length > 0 ? suggestedClarificationTopics : undefined,
     modelVersion,
   };

@@ -84,3 +84,38 @@ describe('parseAiVisionResponse', () => {
     expect(() => parseAiVisionResponse(undefined, 'test-model')).toThrowError(ApiRouteError);
   });
 });
+
+describe('oil clarification and missing overall confidence', () => {
+  it('drops the oil question for drinks, fruit and no-oil preparations, keeps it for pan-cooked food', () => {
+    const result = parseAiVisionResponse(
+      {
+        foods: [
+          { name: 'banana smoothie', preparation: 'blended', portionGrams: 350, confidence: 0.9, uncertaintyTopics: ['oil_amount'] },
+          { name: 'mango shake', portionGrams: 300, confidence: 0.9, uncertaintyTopics: ['oil_amount'] },
+          { name: 'steamed rice', preparation: 'steamed', portionGrams: 200, confidence: 0.9, uncertaintyTopics: ['oil_amount'] },
+          { name: 'chicken curry', preparation: 'sauteed', portionGrams: 250, confidence: 0.8, uncertaintyTopics: ['oil_amount'] },
+        ],
+        overallConfidence: 0.85,
+      },
+      'test',
+    );
+    expect(result.detectedFoods.map((f) => f.uncertaintyTopics)).toEqual([undefined, undefined, undefined, ['oil_amount']]);
+    expect(result.suggestedClarificationTopics).toEqual(['oil_amount']);
+  });
+
+  it('asks nothing about oil for a smoothie-only meal', () => {
+    const result = parseAiVisionResponse(
+      { foods: [{ name: 'banana smoothie', preparation: 'blended', portionGrams: 350, confidence: 0.9, uncertaintyTopics: ['oil_amount'] }], overallConfidence: 0.9 },
+      'test',
+    );
+    expect(result.suggestedClarificationTopics).toBeUndefined();
+  });
+
+  it('falls back to the mean food confidence when overallConfidence is missing', () => {
+    const result = parseAiVisionResponse(
+      { foods: [{ name: 'rice', portionGrams: 200, confidence: 0.8 }, { name: 'dal', portionGrams: 150, confidence: 0.6 }] },
+      'test',
+    );
+    expect(result.overallUncertainty).toBeCloseTo(0.3);
+  });
+});
